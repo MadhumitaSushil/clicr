@@ -1,4 +1,8 @@
 import argparse
+import os
+import json
+import random
+import re
 import sys
 
 from describe_data import *
@@ -96,6 +100,7 @@ def write_cnnlike(i, f_out):
                           "a", "",
                           "c", [""]}
         """
+
     def rename_ents(txt, c_d):
         out_txt = []
         for tok in txt.split():
@@ -122,6 +127,67 @@ def write_cnnlike(i, f_out):
         fh_out.write("\n".join(c) + "\n")
 
 
+def write_squadlike(d, remove_notfound, f_out):
+    """
+    :param i: {"id": "",
+                  "p": "",
+                  "q", "",
+                  "a", "",
+                  "c", [""]}
+    :output: {
+        version: 1.0
+        data: [
+                {'paragraphs': [ {'context': text,
+                                  'qas': [
+                                          {'question': ,
+                                           'id': ,
+                                           'answers': [{'text':,
+                                                        'answer_start':
+                                                      }],
+                                           'is_impossible': ,
+                                          },
+                                          ...
+                                        ]
+                                 }
+                               ]
+                }
+              ]
+    }
+    """
+
+    data_dict = {'data': [{'paragraphs': []}]}
+
+    n_impossible = 0
+    num_found = 0
+
+    for i in d.json_to_plain(remove_notfound=remove_notfound, stp='no-ent', include_q_cands=False):
+        matches = [m.start() for m in re.finditer(re.escape(i['a']), i['p'])]
+        if len(matches):
+            # start_offset = i['p'].index(i['a'])
+            start_offset = random.choice(matches)
+            is_impossible = False
+            num_found += 1
+        else:
+            print('Answers: ', i['a'], "Matches: ", re.findall(re.escape(i['a']), i['p']))
+            start_offset = -1
+            is_impossible = True
+            n_impossible += 1
+        data_dict['data'][0]['paragraphs'].append({
+                                                'qas': [{'question': i['q'],
+                                                         'id': i['id'],
+                                                         'answers': [{'text': i['a'],
+                                                                      'answer_start': start_offset
+                                                                      }],
+                                                         'is_impossible': is_impossible,
+                                                         }],
+                                                'context': i['p']})
+
+    print('Num impossible: ', n_impossible)
+    print('Num found: ', num_found)
+    with open(f_out, 'w') as f:
+        json.dump(data_dict, f)
+
+
 class JsonDataset:
     def __init__(self, dataset_file):
         self.dataset_file = dataset_file
@@ -140,7 +206,7 @@ class JsonDataset:
             for qa in datum[DOC_KEY][QAS_KEY]:
                 fields = {}
                 qa_txt_option = (" " + qa[QUERY_KEY]) if include_q_cands else ""
-                #cand = [w for w in to_entities(datum[DOC_KEY][TITLE_KEY] + " " +
+                # cand = [w for w in to_entities(datum[DOC_KEY][TITLE_KEY] + " " +
                 #                               datum[DOC_KEY][CONTEXT_KEY] + qa_txt_option).lower().split() if w.startswith('@entity')]
                 cand = [w for w in to_entities(datum[DOC_KEY][TITLE_KEY] + " " +
                                                datum[DOC_KEY][CONTEXT_KEY]).lower().split() if w.startswith('@entity')]
@@ -165,7 +231,8 @@ class JsonDataset:
                     fields["c"] = list(c)
                     assert a
                     fields["a"] = a
-                    document = remove_entity_marks(datum[DOC_KEY][TITLE_KEY] + " " + datum[DOC_KEY][CONTEXT_KEY]).replace(
+                    document = remove_entity_marks(
+                        datum[DOC_KEY][TITLE_KEY] + " " + datum[DOC_KEY][CONTEXT_KEY]).replace(
                         "\n", " ").lower()
                     fields["p"] = document
                     fields["q"] = remove_entity_marks(qa[QUERY_KEY]).replace("\n", " ").lower()
@@ -220,7 +287,9 @@ def map_to_split_name(f_dataset):
     return name
 
 
-def clicr_to_concept_txt(train_file="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_json_concept_annotated/train1.0.json", out_file="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_json_concept_annotated/train1.0_concepts.txt"):
+def clicr_to_concept_txt(
+        train_file="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_json_concept_annotated/train1.0.json",
+        out_file="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_json_concept_annotated/train1.0_concepts.txt"):
     """
     Prepare a single txt file with entities marked as @ent_a_b. One sentence per line, lowercased
     """
@@ -230,24 +299,26 @@ def clicr_to_concept_txt(train_file="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/D
             for l in datum[DOC_KEY][TITLE_KEY].split("\n"):
                 if not l.strip():
                     continue
-                out_f.write(to_entities(l, ent_marker="@ent_").lower()+"\n")
+                out_f.write(to_entities(l, ent_marker="@ent_").lower() + "\n")
             for l in datum[DOC_KEY][CONTEXT_KEY].split("\n"):
                 if not l.strip():
                     continue
-                out_f.write(to_entities(l, ent_marker="@ent_").lower()+"\n")
+                out_f.write(to_entities(l, ent_marker="@ent_").lower() + "\n")
             for qa in datum[DOC_KEY][QAS_KEY]:
                 q = qa[QUERY_KEY]
                 for a in qa[ANS_KEY]:
                     if a["origin"] == "dataset":
                         q = q.replace("@placeholder", a[TXT_KEY])
-                out_f.write(to_entities(q, ent_marker="@ent_").lower()+"\n")
+                out_f.write(to_entities(q, ent_marker="@ent_").lower() + "\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='')
-    parser.add_argument('-dataset_dir', default="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_json_concept_annotated/")
-    parser.add_argument("-out_dir", default="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_plain/")
+    parser.add_argument('-dataset_dir',
+                        default="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_json_concept_annotated/")
+    parser.add_argument("-out_dir",
+                        default="/mnt/b5320167-5dbd-4498-bf34-173ac5338c8d/Datasets/bmj_case_reports_data/dataset_plain/")
     parser.add_argument("-stp", help="(ent | no-ent)")
     parser.add_argument("-reader", help="(gareader | sareader | cnnlike)")
     args = parser.parse_args()
@@ -269,7 +340,7 @@ if __name__ == "__main__":
 
         for f_dataset in ["dev1.0.json", "test1.0.json"]:
             d = JsonDataset(args.dataset_dir + f_dataset)
-            #remove_notfound = False
+            # remove_notfound = False
             remove_notfound = False
             for inst in d.json_to_plain(remove_notfound=remove_notfound, stp=args.stp):
                 write_gareader(inst, f_out=out_dir + map_to_split_name(f_dataset) + "/" + inst["id"] + ".question")
@@ -280,13 +351,13 @@ if __name__ == "__main__":
         for f_dataset in ["train1.0.json"]:
             d = JsonDataset(args.dataset_dir + f_dataset)
             remove_notfound = True
-            with open(out_dir+map_to_split_name(f_dataset), "w") as fh_out:
+            with open(out_dir + map_to_split_name(f_dataset), "w") as fh_out:
                 for inst in d.json_to_plain(remove_notfound=remove_notfound, stp=args.stp):
                     write_sareader(inst, fh_out=fh_out)
         for f_dataset in ["dev1.0.json", "test1.0.json"]:
             d = JsonDataset(args.dataset_dir + f_dataset)
             remove_notfound = False
-            with open(out_dir+map_to_split_name(f_dataset), "w") as fh_out:
+            with open(out_dir + map_to_split_name(f_dataset), "w") as fh_out:
                 for inst in d.json_to_plain(remove_notfound=remove_notfound, stp=args.stp):
                     write_sareader(inst, fh_out=fh_out)
 
@@ -307,3 +378,15 @@ if __name__ == "__main__":
             remove_notfound = True
             for inst in d.json_to_plain(remove_notfound=remove_notfound, stp=args.stp, include_q_cands=True):
                 write_cnnlike(inst, f_out=out_dir + f_dataset[:-len("1.0.json")] + "/" + inst["id"] + ".question")
+
+    elif args.reader == 'squadlike':
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+        for f_dataset in ["train1.0.json"]:
+            remove_notfound = True
+        for f_dataset in ["dev1.0.json", "test1.0.json"]:
+            remove_notfound = False
+        
+        d = JsonDataset(args.dataset_dir + f_dataset)
+        f_out = out_dir + f_dataset
+        write_squadlike(d, remove_notfound, f_out)
