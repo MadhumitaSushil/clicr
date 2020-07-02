@@ -107,10 +107,16 @@ def evaluate(dataset, predictions, lemmatizer_path=None, extended=False, embeddi
                 f1_score, prediction, ground_truths, comm=comm)
         datum_count += 1
     print("There were {} unanswered instances".format(n_unanswered))
-    exact_match = 100.0 * exact_match / total
-    f1 = 100.0 * f1 / total
-    assert exact_match <= f1
-    scores = {'exact_match': exact_match, 'f1': f1}
+    exact_match_all = 100.0 * exact_match / total
+    f1_all = 100.0 * f1 / total
+    assert exact_match_all <= f1_all
+    scores = {'exact_match': exact_match_all, 'f1': f1_all}
+
+    exact_match_ans = 100.0 * exact_match / (total - n_unanswered)
+    f1_ans = 100.0 * f1 / (total - n_unanswered)
+    assert exact_match_ans <= f1_ans
+    scores['exact_match_ans'] = exact_match_ans
+    scores['f1_ans'] = f1_ans
 
     if extended:
         from pycocoevalcap.eval import COCOEvalCap
@@ -142,8 +148,12 @@ def print_scores(scores):
     """
     :param scores: {"method1": score, ...}
     """
-    print("{}\t{:.1f}".format("exact_match", scores["exact_match"]))
-    print("{}\t{:.1f}".format("f1", scores["f1"]))
+#    print("{}\t{:.1f}".format("exact_match", scores["exact_match"]))
+#    print("{}\t{:.1f}".format("f1", scores["f1"]))
+#
+#    print("{}\t{:.1f}".format("exact_match_ans", scores["exact_match_ans"]))
+#    print("{}\t{:.1f}".format("f1_ans", scores["f1_ans"]))
+
 
     for method, score in sorted(scores.items()):
         if method == "exact_match" or method == "f1":
